@@ -56,6 +56,58 @@ class SimpleCNN(nn.Module):
         return x   # ✅ Features only
 
 
+class EfficientNetB0Extractor(nn.Module):
+    """EfficientNet-B0 feature extractor (no classifier head).
+
+    Notes:
+    - For best results, resize inputs to ~224x224 and use ImageNet normalization.
+    - feature_dim is 1280 for EfficientNet-B0.
+    """
+
+    def __init__(self, pretrained: bool = True):
+        super().__init__()
+
+        # Import lazily to avoid hard dependency issues during tooling/linters
+        try:
+            from torchvision.models import efficientnet_b0
+        except Exception as e:
+            raise ImportError("torchvision is required for EfficientNetB0Extractor") from e
+
+        # Handle torchvision version differences: `weights=` (new) vs `pretrained=` (old)
+        weights = None
+        if pretrained:
+            try:
+                from torchvision.models import EfficientNet_B0_Weights
+
+                weights = EfficientNet_B0_Weights.DEFAULT
+            except Exception:
+                weights = None
+
+        try:
+            model = efficientnet_b0(weights=weights)
+        except TypeError:
+            # Older torchvision
+            model = efficientnet_b0(pretrained=pretrained)
+
+        self.features = model.features
+        self.avgpool = model.avgpool  # AdaptiveAvgPool2d(1)
+
+        # EfficientNet-B0 classifier is typically: Dropout -> Linear(1280, 1000)
+        try:
+            self.feature_dim = model.classifier[1].in_features
+        except Exception:
+            self.feature_dim = 1280
+
+        self.dropout = nn.Dropout(p=0.2)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.dropout(x)
+        return x
+
+
 # Optional: Local client training head (clients only, NOT shared)
 class LocalHead(nn.Module):
     """
