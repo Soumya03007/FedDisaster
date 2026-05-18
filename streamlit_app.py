@@ -56,6 +56,8 @@ st.sidebar.markdown("### System Status")
 
 DEFAULT_METRICS_PATH = Path("metrics.json")
 LATEST_METRICS_POINTER = Path("latest_metrics_path.txt")
+IDLE_METRICS_PATH = Path("metrics_idle.json")
+STALE_RUNNING_TIMEOUT_SECONDS = 20 * 60
 status_placeholder = st.sidebar.empty()
 metrics_placeholder = st.sidebar.empty()
 countdown_placeholder = st.sidebar.empty()
@@ -77,6 +79,21 @@ def resolve_metrics_path() -> Path:
 
 
 def load_metrics():
+    def _load_idle_metrics():
+        if not IDLE_METRICS_PATH.exists():
+            return {}
+        try:
+            with IDLE_METRICS_PATH.open(encoding="utf-8") as f:
+                raw_idle = f.read().strip()
+                if not raw_idle:
+                    return {}
+                data_idle = json.loads(raw_idle)
+            if "accuracies" not in data_idle or not isinstance(data_idle["accuracies"], list):
+                return {}
+            return data_idle
+        except Exception:
+            return {}
+
     metrics_path = resolve_metrics_path()
     if not metrics_path.exists():
         return {}
@@ -88,6 +105,24 @@ def load_metrics():
             data = json.loads(raw)
         if "accuracies" not in data or not isinstance(data["accuracies"], list):
             return {}
+
+        # Treat abandoned "running" snapshots as stale so fresh dashboard starts are idle.
+        status = str(data.get("status", "")).lower()
+        training_complete = bool(data.get("training_complete", False))
+        if status == "running" and not training_complete:
+            last_updated = data.get("last_updated")
+            if last_updated:
+                try:
+                    ts = str(last_updated).replace("Z", "+00:00")
+                    last_dt = datetime.fromisoformat(ts)
+                    age_seconds = (datetime.now(last_dt.tzinfo) - last_dt).total_seconds() if last_dt.tzinfo else (datetime.now() - last_dt).total_seconds()
+                    if age_seconds > STALE_RUNNING_TIMEOUT_SECONDS:
+                        idle_data = _load_idle_metrics()
+                        if idle_data:
+                            idle_data["message"] = "Showing idle state. Previous run snapshot is stale."
+                            return idle_data
+                except Exception:
+                    pass
         return data
     except Exception as e:
         status_placeholder.error(f"Error reading metrics.json: {e}")

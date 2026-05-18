@@ -1,14 +1,9 @@
 {
-  "accuracies": [
-    0.9142645971914265,
-    0.9142645971914265,
-    0.9142645971914265,
-    0.9142645971914265,
-    0.9164818920916482
-  ],
-  "last_round": 5,
-  "last_updated": "2026-04-22T19:15:22",
-  "backbone": "efficientnet_b0",
-  "payload_kb": 1620.0078125,
-  "quantized_model_kb": null
+  "accuracies": [],
+  "status": "started",
+  "round_num": 0,
+  "training_complete": false,
+  "last_updated": "2026-05-18T09:10:07.919877",
+  "rounds_expected": 5,
+  "backbone": "efficientnet_b0"
 }
