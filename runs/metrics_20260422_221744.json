@@ -1,0 +1,36 @@
+{
+  "accuracies": [
+    0.6975504769060055,
+    0.7697958866400825,
+    0.8469387544263998,
+    0.8653030992073563,
+    0.9073485865055451
+  ],
+  "last_round": 5,
+  "round_num": 5,
+  "rounds_expected": 5,
+  "num_clients": 3,
+  "last_updated": "2026-04-22T22:52:29",
+  "backbone": "efficientnet_b0",
+  "payload_kb": 12428.234375,
+  "quantized_model_kb": null,
+  "status": "completed",
+  "training_complete": true,
+  "message": "RF evaluation completed for this round.",
+  "rf_evaluated": true,
+  "client_accuracies": [
+    0.6975504769060055,
+    0.7697958866400825,
+    0.8469387544263998,
+    0.8653030992073563,
+    0.9073485865055451
+  ],
+  "rf_accuracies": [
+    0.8876570583887657,
+    0.8876570583887657,
+    0.8876570583887657,
+    0.8876570583887657,
+    0.8972653362897265
+  ],
+  "latest_client_accuracy": 0.9073485865055451
+}

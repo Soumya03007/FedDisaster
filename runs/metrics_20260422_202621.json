@@ -1,0 +1,21 @@
+{
+  "accuracies": [
+    0.9113082039911308,
+    0.9113082039911308,
+    0.9113082039911308,
+    0.9113082039911308,
+    0.9157427937915743
+  ],
+  "last_round": 5,
+  "round_num": 5,
+  "rounds_expected": 5,
+  "num_clients": 3,
+  "last_updated": "2026-04-22T21:03:47",
+  "backbone": "efficientnet_b0",
+  "payload_kb": 1620.0078125,
+  "quantized_model_kb": null,
+  "status": "completed",
+  "training_complete": true,
+  "message": "RF evaluation completed for this round.",
+  "rf_evaluated": true
+}

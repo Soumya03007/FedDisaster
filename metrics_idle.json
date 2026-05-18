@@ -1,0 +1,6 @@
+{
+  "accuracies": [],
+  "status": "idle",
+  "message": "Run 'python simple_demo.py' or 'python server.py + clients' to start federated learning.",
+  "training_complete": true
+}

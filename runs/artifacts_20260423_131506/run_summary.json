@@ -1,0 +1,13 @@
+{
+  "accuracies": [],
+  "run_completed_at": "2026-04-23T16:33:03",
+  "best_rf_accuracy": 0.9408721359940873,
+  "final_rf_accuracy": 0.9408721359940873,
+  "final_client_accuracy": 0.9522429016384957,
+  "best_backbone_path": "D:\\Tech stuffs\\flwr-flood-damage\\runs\\artifacts_20260423_131506\\global_backbone_best_in_run.pt",
+  "final_backbone_path": "D:\\Tech stuffs\\flwr-flood-damage\\runs\\artifacts_20260423_131506\\global_backbone_final.pt",
+  "rf_path": "D:\\Tech stuffs\\flwr-flood-damage\\runs\\artifacts_20260423_131506\\global_rf.pkl",
+  "pca_path": "D:\\Tech stuffs\\flwr-flood-damage\\runs\\artifacts_20260423_131506\\global_pca.pkl",
+  "metrics_path": "D:\\Tech stuffs\\flwr-flood-damage\\runs\\metrics_20260423_131506.json",
+  "selection_metric": "best_rf_accuracy"
+}

@@ -1,7 +1,8 @@
 param(
   [int]$Count = 3,
   [int]$StartCid = 1,
-  [int]$BatchSize = 32
+  [int]$BatchSize = 32,
+  [int]$TrainableBlocks = 1
 )
 
 # Resolve repo root (this script lives in scripts/)
@@ -16,6 +17,6 @@ if (Test-Path $VenvActivate) {
 for ($i = 0; $i -lt $Count; $i++) {
   $cid = $StartCid + $i
   # Launch each client in a new PowerShell window, set working dir to repo root
-  $command = "Set-Location `"$RepoRoot`"; python client.py --cid $cid --batch_size $BatchSize"
+  $command = "Set-Location `"$RepoRoot`"; python client.py --cid $cid --backbone efficientnet_b0 --train_backbone --trainable_blocks $TrainableBlocks --batch_size $BatchSize"
   Start-Process -FilePath "pwsh" -ArgumentList "-NoExit", "-Command", $command
 }

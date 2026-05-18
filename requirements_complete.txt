@@ -1,0 +1,9 @@
+flwr>=1.5.0
+torch>=2.0.0
+torchvision>=0.15.0
+matplotlib
+numpy
+streamlit
+scikit-learn>=1.3.0
+joblib>=1.3.0
+Pillow>=10.0.0

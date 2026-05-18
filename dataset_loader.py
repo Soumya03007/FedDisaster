@@ -1,6 +1,7 @@
-from typing import Tuple
+from typing import Dict, Optional, Tuple
 import os
 import torch
+import platform
 from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms
 from PIL import Image
@@ -80,6 +81,7 @@ def load_imagefolder_dataloaders(
     test_dir: str,
     batch_size: int = 32,
     preset: str = "simplecnn",
+    optimized: bool = True,
 ) -> Tuple[DataLoader, DataLoader, int]:
     """Create ImageFolder-based train/test DataLoaders and return num_classes.
 
@@ -104,8 +106,8 @@ def load_imagefolder_dataloaders(
             "Detected <=1 class. Ensure data is organized in subfolders per class."
         )
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0)
-    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=0)
+    train_loader = _build_dataloader(train_ds, batch_size=batch_size, shuffle=True, optimized=optimized)
+    test_loader = _build_dataloader(test_ds, batch_size=batch_size, shuffle=False, optimized=optimized)
     
     # Log corrupted files
     if train_ds.corrupted_files:
@@ -120,6 +122,7 @@ def load_global_test_loader(
     global_test_dir: str,
     batch_size: int = 32,
     preset: str = "simplecnn",
+    optimized: bool = True,
 ) -> Tuple[DataLoader, int]:
     """Create a DataLoader for the global held-out test set and return (loader, num_classes).
     
@@ -131,7 +134,7 @@ def load_global_test_loader(
     _, test_tfms = build_transforms(preset=preset)
     test_ds = RobustImageFolder(root=global_test_dir, transform=test_tfms)
     num_classes = len(test_ds.classes)
-    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=0)
+    test_loader = _build_dataloader(test_ds, batch_size=batch_size, shuffle=False, optimized=optimized)
     
     if test_ds.corrupted_files:
         warnings.warn(f"Found {len(test_ds.corrupted_files)} corrupted global test images")
@@ -171,3 +174,33 @@ def evaluate(model, loader, device, criterion=None) -> Tuple[float, float]:
     acc = correct / total if total > 0 else 0.0
     avg_loss = (total_loss / total) if (criterion is not None and total > 0) else 0.0
     return avg_loss, acc
+
+
+def _build_dataloader(dataset, batch_size: int, shuffle: bool, optimized: bool) -> DataLoader:
+    """Construct a baseline or optimized DataLoader configuration.
+    
+    CPU-safe defaults on Windows/CPU: num_workers=0, pin_memory=False to avoid
+    shared memory errors (torch multiprocessing issue).
+    """
+    # CPU-safe defaults
+    use_workers = 0
+    use_pin_memory = False
+    persistent = False
+    prefetch_factor = None
+    
+    if torch.cuda.is_available() or not (platform.system() == "Windows" and len(dataset) > 100):
+        if optimized:
+            use_workers = 4  # or os.cpu_count() // 2
+            use_pin_memory = True
+            persistent = True
+            prefetch_factor = 2
+    
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=use_workers,
+        pin_memory=use_pin_memory,
+        persistent_workers=persistent,
+        prefetch_factor=prefetch_factor,
+    )

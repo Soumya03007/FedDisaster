@@ -22,7 +22,7 @@ Project structure:
 Assumptions:
 - Data uses `torchvision.datasets.ImageFolder` format.
 - Every client and `data/global_test` should use the same class folder names.
-- CPU-first workflow; `EfficientNet-B0` is supported but heavier than `SimpleCNN`.
+- `EfficientNet-B0` is the default federated backbone; to reduce latency, the repo now fine-tunes only the last EfficientNet feature block by default.
 
 1) Prepare offline data
 - Put your client-specific datasets here:
@@ -43,32 +43,48 @@ Optional multi-class setup helper:
 - `pip install -r requirements.txt`
 
 3) Run server (terminal 1)
-- Default backbone (`simplecnn`):
-  - `python server.py --num_rounds 5 --epochs 1 --batch_size 32`
-- EfficientNet-B0 backbone:
-  - `python server.py --backbone efficientnet_b0 --num_rounds 5 --epochs 1 --batch_size 32`
+- Default low-latency EfficientNet path:
+  - `python server.py --backbone efficientnet_b0 --num_rounds 5 --epochs 1 --batch_size 32 --rf_eval_interval 2`
+- If you want every client in every round:
+  - `python server.py --backbone efficientnet_b0 --num_rounds 5 --epochs 1 --batch_size 32 --fraction_fit 1.0`
 
 4) Run clients (separate terminals)
-- Default backbone (`simplecnn`):
-  - `python client.py --cid 1`
-  - `python client.py --cid 2`
-  - `python client.py --cid 3`
-- EfficientNet-B0 backbone:
-  - `python client.py --cid 1 --backbone efficientnet_b0`
-  - `python client.py --cid 2 --backbone efficientnet_b0`
-  - `python client.py --cid 3 --backbone efficientnet_b0`
+- Default federated EfficientNet path:
+  - `python client.py --cid 1 --backbone efficientnet_b0 --train_backbone --trainable_blocks 1`
+  - `python client.py --cid 2 --backbone efficientnet_b0 --train_backbone --trainable_blocks 1`
+  - `python client.py --cid 3 --backbone efficientnet_b0 --train_backbone --trainable_blocks 1`
+- To fine-tune a larger shared slice of EfficientNet:
+  - increase `--trainable_blocks` from `1` to `2` or `3`
 
 5) Convenience scripts (PowerShell)
-- `scripts/start_server.ps1 -Rounds 5 -Epochs 1 -BatchSize 32`
-- `scripts/start_clients.ps1 -Count 3 -BatchSize 32`
+- `scripts/start_server.ps1 -Rounds 5 -Epochs 1 -BatchSize 32 -RfEvalInterval 2`
+- `scripts/start_clients.ps1 -Count 3 -BatchSize 32 -TrainableBlocks 1`
+- One-command launcher:
+  - `scripts/run_federated.ps1 -NumClients 3 -NumRounds 5 -Epochs 1 -BatchSize 32 -TrainableBlocks 1`
+  - or `python scripts/run_federated.py --num_clients 3 --num_rounds 5 --epochs 1 --batch_size 32 --trainable_blocks 1`
+  - default behavior is `client_selection=all`, which makes all launched clients train every round
+  - for production-style sampling, use `-ClientSelection sampled -FractionFit 0.66` or `--client_selection sampled --fraction_fit 0.66`
+  - for faster and more varied local updates, use `-MaxBatchesPerRound 20` or `--max_batches_per_round 20`
+
+Quick demo note:
+- `python simple_demo.py` now defaults to `--backbone efficientnet_b0`.
+- `simplecnn` is still available with `python simple_demo.py --backbone simplecnn`, but it is kept mainly for backward compatibility.
 
 Outputs and metrics:
-- `metrics.json` (round-wise metrics, backbone, timestamps)
+- `runs/metrics_YYYYMMDD_HHMMSS.json` (one metrics file per run)
+- `runs/artifacts_YYYYMMDD_HHMMSS/` (run-specific backbone, RF, PCA, and run summary)
+- `latest_metrics_path.txt` (pointer used by the dashboard to follow the newest run)
+- `best_metrics.json` (best-performing run snapshot across all runs)
+- `best_artifacts/` (best preserved backbone, RF, PCA, and artifact metadata across runs)
 - `accuracy_curve.png` (accuracy vs federated round)
-- `global_rf.pkl` and `global_pca.pkl` (server-side RF/PCA artifacts)
-- `global_cnn.pt` (saved backbone weights from demo flow)
+- `global_rf.pkl`, `global_pca.pkl`, and `global_cnn.pt` remain part of the demo flow
 
 Notes:
 - Number of classes is detected dynamically from folder structure.
 - FedAvg exchanges backbone parameters only; raw client images never leave local client folders.
+- Server-side PCA + RandomForest evaluation is intentionally throttled with `--rf_eval_interval` so heavy centralized evaluation does not block every round.
+- The one-command launcher skips the expensive initial evaluation and defaults `rf_eval_interval=0`, which means the heavy RF step runs only on the final round.
+- Small-team/dev default: `client_selection=all` for easier debugging and reproducibility.
+- Production-scale option: `client_selection=sampled` for lower latency and better straggler tolerance.
+- `max_batches_per_round` lets each client train on a different shuffled subset of local data each round without permanently splitting the dataset.
 - Class mapping consistency is validated across clients/global test in the demo workflow.

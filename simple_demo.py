@@ -1,51 +1,49 @@
 #!/usr/bin/env python3
 """
-Federated Learning Demo with Global Random Forest Classifier
-CNN is trained via FedAvg
-Random Forest is trained centrally on extracted CNN features (REALISTIC)
+Local federated learning demo with a centralized Random Forest classifier.
+
+- Simulates FedAvg in-process without Flower networking
+- Defaults to EfficientNet-B0 to mirror the preferred modern path
+- Keeps SimpleCNN available as a compatibility option
 """
 
 import argparse
-import torch
-import torch.nn as nn
-import numpy as np
 import json
 import time
-import joblib
 from datetime import datetime
 
-from models import SimpleCNN, EfficientNetB0Extractor, LocalHead
-from dataset_loader import load_imagefolder_dataloaders, load_global_test_loader
+import joblib
+import numpy as np
+import torch
+import torch.nn as nn
+from sklearn.decomposition import PCA
+from sklearn.ensemble import RandomForestClassifier
+
+from dataset_loader import load_global_test_loader, load_imagefolder_dataloaders
+from models import EfficientNetB0Extractor, LocalHead, SimpleCNN
 from utils import get_device, get_parameters_from_model, set_parameters_to_model
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.decomposition import PCA
 
-# ---------------------------------------------------------
-# ✅ GLOBAL RF TRAIN + EVAL (NO DATA LEAKAGE)
-# ---------------------------------------------------------
 def train_and_evaluate_rf(cnn_model, client_loaders, global_test_loader, device):
+    """Train a centralized PCA+RF classifier on extracted backbone features."""
     cnn_model.eval()
-    X_train, y_train = [], []
+    x_train, y_train = [], []
 
-    # Collect features from all client train sets
     with torch.no_grad():
         for train_loader, _ in client_loaders:
             for images, labels in train_loader:
                 images = images.to(device)
                 features = cnn_model(images)
-                X_train.append(features.cpu().numpy())
+                x_train.append(features.cpu().numpy())
                 y_train.append(labels.numpy())
 
-    X_train = np.vstack(X_train)
+    x_train = np.vstack(x_train)
     y_train = np.hstack(y_train)
-    X_train += 0.01 * np.random.randn(*X_train.shape)  # Feature noise
+    x_train = x_train + 0.01 * np.random.randn(*x_train.shape)
 
-    # PCA (retain 90% variance)
     pca = PCA(n_components=0.90, whiten=True)
-    X_train_pca = pca.fit_transform(X_train)
+    x_train_pca = pca.fit_transform(x_train)
 
-    # Random Forest (regularized)
     rf = RandomForestClassifier(
         n_estimators=80,
         max_depth=10,
@@ -55,99 +53,128 @@ def train_and_evaluate_rf(cnn_model, client_loaders, global_test_loader, device)
         class_weight="balanced",
         random_state=42,
     )
-    rf.fit(X_train_pca, y_train)
+    rf.fit(x_train_pca, y_train)
 
-    # Evaluate on global test set
-    X_test, y_test = [], []
+    x_test, y_test = [], []
     with torch.no_grad():
         for images, labels in global_test_loader:
             images = images.to(device)
             features = cnn_model(images)
-            X_test.append(features.cpu().numpy())
+            x_test.append(features.cpu().numpy())
             y_test.append(labels.numpy())
 
-    X_test = np.vstack(X_test)
+    x_test = np.vstack(x_test)
     y_test = np.hstack(y_test)
-    X_test_pca = pca.transform(X_test)
+    x_test_pca = pca.transform(x_test)
 
-    acc = rf.score(X_test_pca, y_test)
+    acc = float(rf.score(x_test_pca, y_test))
     print(f"[GLOBAL RF ACCURACY: {acc:.4f}]")
 
-    # Save models
     joblib.dump(rf, "global_rf.pkl")
     joblib.dump(pca, "global_pca.pkl")
-
     return acc
 
 
-# ---------------------------------------------------------
-# ✅ FEDERATED ROUND (CNN ONLY)
-# ---------------------------------------------------------
-def simulate_federated_round(client_models, client_loaders, global_model, device, criterion, round_num, local_heads, optimizers):
+def simulate_federated_round(
+    client_models,
+    client_loaders,
+    global_model,
+    device,
+    criterion,
+    round_num,
+    local_heads,
+    optimizers,
+    epochs,
+    train_backbone,
+):
+    """Run one in-process federated round and aggregate model updates with FedAvg."""
     print(f"\n[FEDERATED ROUND {round_num}]")
     print("=" * 60)
 
-    # Get current global parameters
     global_params = get_parameters_from_model(global_model)
-
     client_updates = []
     client_sizes = []
 
-    # ---- CLIENT SIDE TRAINING ----
-    for cid, (model, head, optim, (train_loader, _)) in enumerate(
-        zip(client_models, local_heads, optimizers, client_loaders), 1
+    for cid, (model, head, optimizer, (train_loader, _)) in enumerate(
+        zip(client_models, local_heads, optimizers, client_loaders), start=1
     ):
         print(f"\n[CLIENT {cid} LOCAL TRAINING]")
-
-        # Reset CNN weights to global
         set_parameters_to_model(model, global_params)
         model.train()
         head.train()
 
-        total_loss = 0.0
+        for epoch in range(epochs):
+            running_loss = 0.0
+            total = 0
 
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
-            optim.zero_grad()
+            for images, labels in train_loader:
+                images = images.to(device)
+                labels = labels.to(device)
+                optimizer.zero_grad()
 
-            # Forward: CNN → Local head
-            features = model(images)
-            outputs = head(features)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optim.step()
+                if train_backbone:
+                    features = model(images)
+                else:
+                    with torch.no_grad():
+                        features = model(images)
 
-            total_loss += loss.item()
+                outputs = head(features)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
 
-        train_loss = total_loss / len(train_loader)
-        print(f"   Local train loss: {train_loss:.4f}")
+                running_loss += loss.item() * images.size(0)
+                total += images.size(0)
+
+            avg_loss = running_loss / (total + 1e-12)
+            print(f"   Epoch {epoch + 1}/{epochs} train loss: {avg_loss:.4f}")
 
         client_updates.append(get_parameters_from_model(model))
         client_sizes.append(len(train_loader.dataset))
 
-    # ---- FEDAVG AGGREGATION ----
     total_samples = sum(client_sizes)
     aggregated_params = []
-    # Aggregate in float64 to avoid dtype casting errors, then cast back
-    for i in range(len(client_updates[0])):
-        orig_dtype = client_updates[0][i].dtype
-        weighted_sum = np.zeros_like(client_updates[0][i], dtype=np.float64)
+    for index in range(len(client_updates[0])):
+        original_dtype = client_updates[0][index].dtype
+        weighted_sum = np.zeros_like(client_updates[0][index], dtype=np.float64)
         for update, size in zip(client_updates, client_sizes):
-            weighted_sum += (size / total_samples) * update[i].astype(np.float64)
-        # Cast back to original dtype (e.g., float32 or int64) to match model state_dict
-        aggregated_params.append(weighted_sum.astype(orig_dtype))
+            weighted_sum += (size / total_samples) * update[index].astype(np.float64)
+        aggregated_params.append(weighted_sum.astype(original_dtype))
 
     set_parameters_to_model(global_model, aggregated_params)
-    print(f"[SERVER AGGREGATION COMPLETE]")
+    print("[SERVER AGGREGATION COMPLETE]")
 
 
-# ---------------------------------------------------------
-# ✅ MAIN
-# ---------------------------------------------------------
 def _set_backbone_trainable(backbone_model: nn.Module, train_backbone: bool):
-    """CPU-friendly default: freeze backbone unless explicitly requested."""
-    for p in backbone_model.parameters():
-        p.requires_grad = bool(train_backbone)
+    for parameter in backbone_model.parameters():
+        parameter.requires_grad = bool(train_backbone)
+
+
+def _build_backbone(backbone: str) -> nn.Module:
+    if backbone == "efficientnet_b0":
+        return EfficientNetB0Extractor(pretrained=True)
+    return SimpleCNN()
+
+
+def _preset_for_backbone(backbone: str) -> str:
+    if backbone == "efficientnet_b0":
+        return "efficientnet_b0"
+    return "simplecnn"
+
+
+def update_streamlit_metrics(accuracies, training_complete=False, round_num=None, args=None):
+    status = "completed" if training_complete else "started"
+    metrics = {
+        "accuracies": accuracies,
+        "status": status,
+        "round_num": round_num or len(accuracies),
+        "training_complete": training_complete,
+        "last_updated": datetime.now().isoformat(),
+        "rounds_expected": args.num_rounds if args else 5,
+        "backbone": args.backbone if args else "efficientnet_b0",
+    }
+    with open("metrics.json", "w", encoding="utf-8") as handle:
+        json.dump(metrics, handle, indent=2)
 
 
 def main():
@@ -155,9 +182,9 @@ def main():
     parser.add_argument(
         "--backbone",
         type=str,
-        default="simplecnn",
+        default="efficientnet_b0",
         choices=["simplecnn", "efficientnet_b0"],
-        help="Feature extractor backbone",
+        help="Feature extractor backbone (default: efficientnet_b0; simplecnn kept for compatibility)",
     )
     parser.add_argument(
         "--num_clients",
@@ -166,34 +193,52 @@ def main():
         help="Number of clients (expects data/client_1..data/client_N)",
     )
     parser.add_argument(
+        "--num_rounds",
+        type=int,
+        default=5,
+        help="Number of simulated federated rounds",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=1,
+        help="Local epochs per client per round",
+    )
+    parser.add_argument(
         "--batch_size",
         type=int,
-        default=8,
+        default=32,
         help="Batch size for client loaders and global test loader",
     )
     parser.add_argument(
         "--train_backbone",
         action="store_true",
-        help="Train the backbone on CPU (SLOW for EfficientNet). Default is frozen backbone.",
+        help="Fine-tune the shared backbone. EfficientNet-B0 stays frozen by default for CPU practicality.",
+    )
+    parser.add_argument(
+        "--cpu_safe",
+        action="store_true",
+        default=True,
+        help="Use CPU-safe DataLoader settings (num_workers=0, pin_memory=False). Recommended for Windows CPU.",
     )
     args = parser.parse_args()
 
-    # Train backbone by default for SimpleCNN; freeze by default for EfficientNet (CPU practicality)
     train_backbone = True if args.backbone == "simplecnn" else bool(args.train_backbone)
 
-    print("🌊 FEDERATED LEARNING + RANDOM FOREST (LEARNING ACROSS ROUNDS)")
+    print("FEDERATED LEARNING + RANDOM FOREST DEMO")
     print("=" * 70)
-    print(f"Backbone: {args.backbone} | num_clients: {args.num_clients} | batch_size: {args.batch_size} | train_backbone: {train_backbone}")
+    print(
+        f"Backbone: {args.backbone} | num_clients: {args.num_clients} | "
+        f"num_rounds: {args.num_rounds} | epochs: {args.epochs} | "
+        f"batch_size: {args.batch_size} | train_backbone: {train_backbone}"
+    )
 
     device = get_device()
     criterion = nn.CrossEntropyLoss()
+    preset = _preset_for_backbone(args.backbone)
 
-    preset = "efficientnet_b0" if args.backbone == "efficientnet_b0" else "simplecnn"
-
-    # ---- LOAD CLIENT DATA ----
-    print("📁 LOADING CLIENT DATA:")
+    print("LOADING CLIENT DATA:")
     client_loaders = []
-
     num_classes = None
     class_to_idx_ref = None
 
@@ -203,9 +248,9 @@ def main():
             f"data/client_{cid}/test",
             batch_size=args.batch_size,
             preset=preset,
+            optimized=not args.cpu_safe,
         )
 
-        # Ensure consistent label mapping across clients (CRITICAL for multi-client training)
         class_to_idx = train_loader.dataset.class_to_idx
         if num_classes is None:
             num_classes = client_num_classes
@@ -214,101 +259,90 @@ def main():
         else:
             if client_num_classes != num_classes:
                 raise ValueError(
-                    f"Client {cid} num_classes={client_num_classes} differs from expected {num_classes}. "
-                    "Ensure every client has the same class folders under train/ and test/."
+                    f"Client {cid} num_classes={client_num_classes} differs from expected {num_classes}."
                 )
             if class_to_idx != class_to_idx_ref:
                 raise ValueError(
-                    f"Client {cid} class_to_idx differs from other clients. "
-                    "This usually happens when class folders are missing or named differently. "
-                    "Ensure every client has the exact same class folder names (empty folders are OK)."
+                    f"Client {cid} class_to_idx differs from the other clients. "
+                    "Ensure class folder names are identical across all client folders."
                 )
 
         client_loaders.append((train_loader, test_loader))
         print(f"   Client {cid}: {len(train_loader.dataset)} train, {len(test_loader.dataset)} test")
 
-    # ---- LOAD GLOBAL TEST ----
     global_test_loader, global_num_classes = load_global_test_loader(
         "data/global_test",
         batch_size=args.batch_size,
         preset=preset,
+        optimized=not args.cpu_safe,
     )
     if global_num_classes != num_classes:
         raise ValueError(
-            f"Global test num_classes={global_num_classes} differs from clients num_classes={num_classes}. "
-            "Ensure data/global_test has the same class folders as the clients."
+            f"Global test num_classes={global_num_classes} differs from clients num_classes={num_classes}."
         )
-
-    if hasattr(global_test_loader.dataset, "class_to_idx") and global_test_loader.dataset.class_to_idx != class_to_idx_ref:
+    if (
+        hasattr(global_test_loader.dataset, "class_to_idx")
+        and global_test_loader.dataset.class_to_idx != class_to_idx_ref
+    ):
         raise ValueError(
-            "Global test class_to_idx differs from clients. "
-            "Ensure data/global_test uses the exact same class folder names as the clients."
+            "Global test class_to_idx differs from the client datasets. "
+            "Ensure class folder names are identical."
         )
 
     print(f"   Global test: {len(global_test_loader.dataset)} images")
 
-    # ---- INITIALIZE MODELS ----
-    if args.backbone == "efficientnet_b0":
-        global_model = EfficientNetB0Extractor(pretrained=True).to(device)
-        client_models = [EfficientNetB0Extractor(pretrained=True).to(device) for _ in client_loaders]
-    else:
-        global_model = SimpleCNN().to(device)
-        client_models = [SimpleCNN().to(device) for _ in client_loaders]
+    global_model = _build_backbone(args.backbone).to(device)
+    client_models = [_build_backbone(args.backbone).to(device) for _ in client_loaders]
 
-    # Freeze backbone by default on CPU (EfficientNet is heavy)
     _set_backbone_trainable(global_model, train_backbone)
-    for m in client_models:
-        _set_backbone_trainable(m, train_backbone)
+    for model in client_models:
+        _set_backbone_trainable(model, train_backbone)
 
-    # Local heads must output the GLOBAL number of classes, even if each client only sees a subset
     local_heads = [LocalHead(global_model.feature_dim, num_classes).to(device) for _ in client_models]
 
-    # Optimizer: always train local head; optionally train backbone
     optimizers = []
     for model, head in zip(client_models, local_heads):
         params = list(head.parameters())
         if train_backbone:
-            params += [p for p in model.parameters() if p.requires_grad]
-        optimizers.append(torch.optim.Adam(params, lr=1e-3 if args.backbone == "simplecnn" else 1e-4))
+            params += [parameter for parameter in model.parameters() if parameter.requires_grad]
+        lr = 1e-4 if args.backbone == "efficientnet_b0" else 1e-3
+        optimizers.append(torch.optim.Adam(params, lr=lr))
 
-    print(f"\n[Initialized CNN feature extractor and client heads]")
+    # Initial status update BEFORE any training
+    print("[DASHBOARD] Sending started signal...")
+    update_streamlit_metrics([], False, 0, args)
+    print("[DASHBOARD] Status sent - Streamlit should show 'Started' now!")
 
-    # ---- METRICS FOR STREAMLIT ----
-    def update_streamlit_metrics(accuracies, training_complete=False):
-        metrics = {
-            "accuracies": accuracies,
-            "training_complete": training_complete,
-            "last_updated": datetime.now().isoformat(),
-            "rounds_expected": 5,
-        }
-        with open("metrics.json", "w") as f:
-            json.dump(metrics, f, indent=2)
-
-    # ---- FEDERATED TRAINING ROUNDS ----
-    num_rounds = 5
     accuracies = []
-
-    for round_num in range(1, num_rounds + 1):
+    for round_num in range(1, args.num_rounds + 1):
         simulate_federated_round(
-            client_models, client_loaders, global_model, device, criterion,
-            round_num, local_heads, optimizers
+            client_models=client_models,
+            client_loaders=client_loaders,
+            global_model=global_model,
+            device=device,
+            criterion=criterion,
+            round_num=round_num,
+            local_heads=local_heads,
+            optimizers=optimizers,
+            epochs=args.epochs,
+            train_backbone=train_backbone,
         )
 
-        # Evaluate global RF after each round
         global_acc = train_and_evaluate_rf(global_model, client_loaders, global_test_loader, device)
         accuracies.append(global_acc)
 
         print(f"\n[GLOBAL RF ACCURACY AFTER ROUND {round_num}: {global_acc:.4f}]")
-        update_streamlit_metrics(accuracies, training_complete=(round_num == num_rounds))
+        update_streamlit_metrics(accuracies, training_complete=(round_num == args.num_rounds), round_num=round_num, args=args)
         time.sleep(3)
 
     torch.save(global_model.state_dict(), "global_cnn.pt")
     print(f"\n[FINAL GLOBAL RF ACCURACY: {accuracies[-1]:.4f}]")
-    print(f"[OK] Global CNN saved: global_cnn.pt")
-    print(f"[OK] Global RF saved: global_rf.pkl")
-    print(f"[OK] Global PCA saved: global_pca.pkl")
-    print(f"[OK] Streamlit ready")
+    print("[OK] Global CNN saved: global_cnn.pt")
+    print("[OK] Global RF saved: global_rf.pkl")
+    print("[OK] Global PCA saved: global_pca.pkl")
+    print("[OK] Streamlit ready")
 
 
 if __name__ == "__main__":
     main()
+
