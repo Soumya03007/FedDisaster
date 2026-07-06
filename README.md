@@ -11,6 +11,7 @@ Current verified result:
 - Details: see `RESULTS.md`
 - Model card: see `MODEL_CARD.md`
 - Artifact packaging: see `ARTIFACTS.md`
+- Dataset guide: see `DATASET.md`
 - Release artifacts: https://github.com/Soumya03007/FedDisaster/releases/tag/v0.1.0-efficientnet-rf
 
 Quick artifact verification:
@@ -40,6 +41,7 @@ Project structure:
 - models.py                         ... `SimpleCNN` and `EfficientNetB0Extractor` backbones + local head
 - data/setup_multiclass_dataset.py  ... Multi-source multi-class dataset setup/distribution utility
 - simple_demo.py                    ... End-to-end local federated simulation workflow
+- predict.py                       ... Single-image inference with saved EfficientNet + RF artifacts
 - scripts/evaluate_best_artifacts.py ... Reproducibility check for saved EfficientNet + RF artifacts
 - utils.py                          ... Shared utilities (parameter conversion, device selection)
 - requirements.txt                  ... project dependencies
@@ -76,13 +78,16 @@ Optional multi-class setup helper:
 - `python scripts/evaluate_best_artifacts.py --backbone_path global_cnn.pt --rf_path global_rf.pkl --pca_path global_pca.pkl --batch_size 64`
 - Expected accuracy: `0.940872`
 
-4) Run server (terminal 1)
+4) Run single-image inference
+- `python predict.py --image path/to/image.jpg --artifacts release`
+
+5) Run server (terminal 1)
 - Default low-latency EfficientNet path:
   - `python server.py --backbone efficientnet_b0 --num_rounds 5 --epochs 1 --batch_size 32 --rf_eval_interval 2`
 - If you want every client in every round:
   - `python server.py --backbone efficientnet_b0 --num_rounds 5 --epochs 1 --batch_size 32 --fraction_fit 1.0`
 
-5) Run clients (separate terminals)
+6) Run clients (separate terminals)
 - Default federated EfficientNet path:
   - `python client.py --cid 1 --backbone efficientnet_b0 --train_backbone --trainable_blocks 1`
   - `python client.py --cid 2 --backbone efficientnet_b0 --train_backbone --trainable_blocks 1`
@@ -90,7 +95,7 @@ Optional multi-class setup helper:
 - To fine-tune a larger shared slice of EfficientNet:
   - increase `--trainable_blocks` from `1` to `2` or `3`
 
-6) Convenience scripts (PowerShell)
+7) Convenience scripts (PowerShell)
 - `scripts/start_server.ps1 -Rounds 5 -Epochs 1 -BatchSize 32 -RfEvalInterval 2`
 - `scripts/start_clients.ps1 -Count 3 -BatchSize 32 -TrainableBlocks 1`
 - One-command launcher:

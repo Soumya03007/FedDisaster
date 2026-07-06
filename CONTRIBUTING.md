@@ -40,6 +40,7 @@ Please run these checks from the repository root:
 
 ```bash
 python -m compileall client.py server.py dataset_loader.py models.py simple_demo.py utils.py scripts
+python -m py_compile predict.py
 python -m json.tool metrics.json
 python -m json.tool best_metrics.json
 ```

@@ -27,6 +27,7 @@ jobs:
             models.py \
             simple_demo.py \
             utils.py \
+            predict.py \
             scripts
 
       - name: Validate JSON metadata
