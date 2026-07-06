@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  syntax-and-metadata:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile Python files
+        run: |
+          python -m compileall \
+            client.py \
+            server.py \
+            dataset_loader.py \
+            models.py \
+            simple_demo.py \
+            utils.py \
+            scripts
+
+      - name: Validate JSON metadata
+        run: |
+          python -m json.tool metrics.json > /tmp/metrics.json
+          python -m json.tool best_metrics.json > /tmp/best_metrics.json
+          python -m json.tool best_artifacts/best_artifacts.json > /tmp/best_artifacts.json
+
+      - name: Check documented result files exist
+        run: |
+          test -f README.md
+          test -f RESULTS.md
+          test -f LICENSE
+          test -f scripts/evaluate_best_artifacts.py
