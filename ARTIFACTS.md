@@ -18,6 +18,12 @@ Recommended release title:
 FedDisaster EfficientNet-B0 + RandomForest Artifacts
 ```
 
+Published release:
+
+```text
+https://github.com/Soumya03007/FedDisaster/releases/tag/v0.1.0-efficientnet-rf
+```
+
 ## Verified Artifact Set
 
 The current verified top-level files are:

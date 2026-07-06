@@ -11,6 +11,7 @@ Current verified result:
 - Details: see `RESULTS.md`
 - Model card: see `MODEL_CARD.md`
 - Artifact packaging: see `ARTIFACTS.md`
+- Release artifacts: https://github.com/Soumya03007/FedDisaster/releases/tag/v0.1.0-efficientnet-rf
 
 Quick artifact verification:
 
