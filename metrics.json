@@ -1,9 +1,22 @@
 {
-  "accuracies": [],
-  "status": "started",
-  "round_num": 0,
-  "training_complete": false,
-  "last_updated": "2026-05-18T09:10:07.919877",
-  "rounds_expected": 5,
-  "backbone": "efficientnet_b0"
+  "accuracies": [
+    0.8920916481892092,
+    0.8920916481892092,
+    0.8920916481892092,
+    0.8920916481892092,
+    0.8920916481892092,
+    0.8920916481892092,
+    0.8920916481892092,
+    0.8920916481892092,
+    0.8920916481892092,
+    0.9408721359940873
+  ],
+  "status": "completed",
+  "round_num": 10,
+  "training_complete": true,
+  "last_updated": "2026-04-23T16:33:03",
+  "rounds_expected": 10,
+  "backbone": "efficientnet_b0",
+  "best_accuracy": 0.9408721359940873,
+  "source_metrics_path": "runs/metrics_20260423_131506.json"
 }

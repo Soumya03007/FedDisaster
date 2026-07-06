@@ -234,9 +234,6 @@ def _train_and_evaluate_global_rf(
     X_train = np.vstack(X_train)
     y_train = np.hstack(y_train)
 
-    # Feature noise (matches simple_demo behavior)
-    X_train = X_train + 0.01 * np.random.randn(*X_train.shape)
-
     pca = PCA(n_components=0.90, whiten=True)
     X_train_pca = pca.fit_transform(X_train)
 

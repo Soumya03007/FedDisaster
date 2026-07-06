@@ -4,3 +4,6 @@ torchvision
 matplotlib
 numpy
 streamlit
+scikit-learn==1.7.2
+joblib>=1.3.0
+Pillow>=10.0.0

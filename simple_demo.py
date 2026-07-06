@@ -39,7 +39,6 @@ def train_and_evaluate_rf(cnn_model, client_loaders, global_test_loader, device)
 
     x_train = np.vstack(x_train)
     y_train = np.hstack(y_train)
-    x_train = x_train + 0.01 * np.random.randn(*x_train.shape)
 
     pca = PCA(n_components=0.90, whiten=True)
     x_train_pca = pca.fit_transform(x_train)
