@@ -1,7 +1,28 @@
 # FedDisaster: Federated Multi-Class Disaster Classification (Flower + PyTorch)
 
-This is a working federated learning system for multi-class disaster image classification (including flood and non-flood categories) using Flower (flwr) and PyTorch.
-It supports offline local datasets per client, a held-out global test set, and round-wise server evaluation.
+This is a working federated learning system for multi-class disaster image classification using Flower (flwr), PyTorch, EfficientNet-B0 feature extraction, and a server-side PCA + RandomForest evaluator.
+It supports offline local datasets per client, a held-out global test set, and round-wise server evaluation without exchanging raw client images.
+
+Current verified result:
+- Global test samples: 1,353
+- Classes: 6
+- Best global PCA+RandomForest accuracy: 94.0872%
+- Best weighted client-side accuracy: 95.2243%
+- Details: see `RESULTS.md`
+
+Quick artifact verification:
+
+```bash
+python scripts/evaluate_best_artifacts.py --backbone_path global_cnn.pt --rf_path global_rf.pkl --pca_path global_pca.pkl --batch_size 64
+```
+
+Expected output:
+
+```text
+classes=6
+samples=1353
+accuracy=0.940872
+```
 
 Project structure:
 - data/
@@ -16,6 +37,7 @@ Project structure:
 - models.py                         ... `SimpleCNN` and `EfficientNetB0Extractor` backbones + local head
 - data/setup_multiclass_dataset.py  ... Multi-source multi-class dataset setup/distribution utility
 - simple_demo.py                    ... End-to-end local federated simulation workflow
+- scripts/evaluate_best_artifacts.py ... Reproducibility check for saved EfficientNet + RF artifacts
 - utils.py                          ... Shared utilities (parameter conversion, device selection)
 - requirements.txt                  ... project dependencies
 
@@ -38,17 +60,26 @@ Optional multi-class setup helper:
 - `python data/setup_multiclass_dataset.py --disaster_sources flood=data/_organized fire=path/to/fire landslide=path/to/landslide --target_root data --num_clients 3 --force`
 
 2) Install dependencies (recommended in a virtual environment)
-- `python -m venv .venv`
-- `.venv\Scripts\activate`  (PowerShell on Windows)
-- `pip install -r requirements.txt`
+- Linux/macOS:
+  - `python -m venv .venv`
+  - `source .venv/bin/activate`
+  - `pip install -r requirements.txt`
+- Windows PowerShell:
+  - `python -m venv .venv`
+  - `.venv\Scripts\activate`
+  - `pip install -r requirements.txt`
 
-3) Run server (terminal 1)
+3) Verify saved artifacts
+- `python scripts/evaluate_best_artifacts.py --backbone_path global_cnn.pt --rf_path global_rf.pkl --pca_path global_pca.pkl --batch_size 64`
+- Expected accuracy: `0.940872`
+
+4) Run server (terminal 1)
 - Default low-latency EfficientNet path:
   - `python server.py --backbone efficientnet_b0 --num_rounds 5 --epochs 1 --batch_size 32 --rf_eval_interval 2`
 - If you want every client in every round:
   - `python server.py --backbone efficientnet_b0 --num_rounds 5 --epochs 1 --batch_size 32 --fraction_fit 1.0`
 
-4) Run clients (separate terminals)
+5) Run clients (separate terminals)
 - Default federated EfficientNet path:
   - `python client.py --cid 1 --backbone efficientnet_b0 --train_backbone --trainable_blocks 1`
   - `python client.py --cid 2 --backbone efficientnet_b0 --train_backbone --trainable_blocks 1`
@@ -56,7 +87,7 @@ Optional multi-class setup helper:
 - To fine-tune a larger shared slice of EfficientNet:
   - increase `--trainable_blocks` from `1` to `2` or `3`
 
-5) Convenience scripts (PowerShell)
+6) Convenience scripts (PowerShell)
 - `scripts/start_server.ps1 -Rounds 5 -Epochs 1 -BatchSize 32 -RfEvalInterval 2`
 - `scripts/start_clients.ps1 -Count 3 -BatchSize 32 -TrainableBlocks 1`
 - One-command launcher:
