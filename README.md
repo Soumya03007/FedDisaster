@@ -9,6 +9,8 @@ Current verified result:
 - Best global PCA+RandomForest accuracy: 94.0872%
 - Best weighted client-side accuracy: 95.2243%
 - Details: see `RESULTS.md`
+- Model card: see `MODEL_CARD.md`
+- Artifact packaging: see `ARTIFACTS.md`
 
 Quick artifact verification:
 
